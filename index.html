@@ -1,0 +1,642 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Perjantai — past, present, future</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Ccircle cx=%228%22 cy=%228%22 r=%226%22 fill=%22%23ffb35c%22/%3E%3C/svg%3E">
+<meta name="description" content="A live 64x64 brain: a moon for the past, a moon for the present, a moon for the future, and walls that light up only where the future was wrong.">
+<style>
+  :root {
+    --bg: #07080c;
+    --ink: #e9e6df;
+    --dim: #8d8a84;
+    --faint: #3a3a40;
+    --panel: rgba(14, 15, 20, 0.82);
+    --line: rgba(255, 255, 255, 0.09);
+    --past: #8ab8ff;
+    --now: #f2efe8;
+    --future: #ffb35c;
+    --hot: #ff6a3d;
+    --good: #7fdc9a;
+    --bad: #ff7a6b;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font-family: var(--sans); overflow: hidden; }
+  canvas#gl { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; }
+
+  .title { position: fixed; left: 20px; top: 16px; pointer-events: none; text-shadow: 0 1px 12px #000; }
+  .title h1 { margin: 0; font-size: 22px; font-weight: 600; letter-spacing: 0.02em; }
+  .title p { margin: 4px 0 0; font-size: 12.5px; color: var(--dim); max-width: 34em; line-height: 1.45; }
+
+  .label { position: fixed; transform: translate(-50%, -100%); font: 11px var(--mono); letter-spacing: 0.08em;
+           text-transform: uppercase; pointer-events: none; white-space: nowrap; text-shadow: 0 0 8px #000, 0 0 2px #000; }
+  .label.past { color: var(--past); } .label.now { color: var(--now); } .label.future { color: var(--future); }
+
+  #panel { position: fixed; right: 14px; top: 14px; width: 300px; max-height: calc(100vh - 28px); overflow: auto;
+           background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 14px 10px;
+           backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); font-size: 12.5px; }
+  #panel.hidden { display: none; }
+  #panel h2 { font-size: 11px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--dim); margin: 14px 0 8px; }
+  #panel h2:first-child { margin-top: 0; }
+
+  .meters { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .meter { background: rgba(255,255,255,0.03); border: 1px solid var(--line); border-radius: 8px; padding: 7px 8px; }
+  .meter .k { font-size: 10.5px; color: var(--dim); }
+  .meter .v { font: 600 16px var(--mono); margin-top: 2px; }
+  .meter.wide { grid-column: span 2; }
+  .meter .sub { font: 10.5px var(--mono); color: var(--dim); margin-top: 2px; }
+
+  .ctl { margin: 9px 0; }
+  .ctl .row { display: flex; justify-content: space-between; align-items: baseline; }
+  .ctl label { color: var(--ink); }
+  .ctl .val { font: 11px var(--mono); color: var(--dim); }
+  .ctl .hint { font-size: 10.5px; color: var(--dim); margin-top: 2px; line-height: 1.35; }
+  input[type=range] { width: 100%; margin: 5px 0 0; accent-color: var(--future); }
+  .check { display: flex; gap: 8px; align-items: flex-start; margin: 7px 0; cursor: pointer; }
+  .check input { margin-top: 2px; accent-color: var(--future); }
+  .check span small { display: block; color: var(--dim); font-size: 10.5px; margin-top: 1px; }
+
+  .buttons { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  button { font: 12px var(--sans); color: var(--ink); background: rgba(255,255,255,0.06); border: 1px solid var(--line);
+           border-radius: 7px; padding: 6px 10px; cursor: pointer; }
+  button:hover { background: rgba(255,255,255,0.12); }
+  button.primary { background: var(--future); color: #1a1006; border-color: transparent; font-weight: 600; }
+  button.primary:hover { filter: brightness(1.08); }
+
+  .weights { display: grid; grid-template-columns: auto auto auto; gap: 10px; align-items: end; margin-top: 4px; }
+  .wgrid { display: grid; grid-template-columns: repeat(3, 20px); gap: 2px; }
+  .wcell { width: 20px; height: 20px; border-radius: 3px; }
+  .wcap { font: 10px var(--mono); color: var(--dim); margin-top: 3px; text-align: center; }
+  .wbars { display: flex; gap: 6px; }
+  .wbar { width: 20px; height: 62px; border-radius: 3px; background: rgba(255,255,255,0.04); position: relative; overflow: hidden; }
+  .wbar i { position: absolute; left: 0; right: 0; }
+
+  #strip { position: fixed; left: 14px; bottom: 14px; display: flex; gap: 8px; }
+  .tile { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 6px; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+  .tile canvas { width: 112px; height: 112px; image-rendering: pixelated; border-radius: 5px; display: block; }
+  .tile .cap { font: 10.5px var(--mono); letter-spacing: 0.06em; text-transform: uppercase; margin-top: 5px; display: flex; justify-content: space-between; }
+  .tile .cap em { font-style: normal; color: var(--dim); text-transform: none; letter-spacing: 0; }
+  #strip.flat .tile canvas { width: min(21vw, 260px); height: min(21vw, 260px); }
+
+  details.ledger { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 8px; }
+  details.ledger summary { cursor: pointer; color: var(--dim); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; }
+  details.ledger p, details.ledger li { color: #c9c5bd; font-size: 11.5px; line-height: 1.5; }
+  details.ledger ul { padding-left: 16px; margin: 6px 0; }
+  code { font-family: var(--mono); font-size: 0.95em; color: var(--ink); }
+
+  #start { position: fixed; inset: 0; display: grid; place-items: center; background: radial-gradient(ellipse at center, rgba(20,16,10,0.6), rgba(5,5,8,0.95)); z-index: 10; }
+  #start .card { max-width: 520px; padding: 28px 28px 22px; background: var(--panel); border: 1px solid var(--line); border-radius: 16px; }
+  #start h1 { margin: 0 0 6px; font-size: 26px; }
+  #start .tenses { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 16px 0; font-size: 13.5px; line-height: 1.45; }
+  #start .tenses b { font: 600 11px var(--mono); letter-spacing: 0.1em; text-transform: uppercase; padding-top: 2px; }
+  #start p { color: #c9c5bd; font-size: 13.5px; line-height: 1.55; margin: 8px 0; }
+  #start .small { font-size: 11.5px; color: var(--dim); }
+  #msg { color: var(--bad); font-size: 12px; margin-top: 8px; min-height: 1em; }
+
+  #toggle { position: fixed; right: 14px; top: 14px; display: none; }
+  #toggle.show { display: block; }
+
+  @media (max-width: 720px) {
+    #panel { width: auto; left: 10px; right: 10px; top: auto; bottom: 150px; max-height: 45vh; }
+    .tile canvas { width: 72px; height: 72px; }
+    .tile .cap em { display: none; }
+    .tile .cap { font-size: 9.5px; }
+    #strip { left: 8px; right: 8px; bottom: 8px; justify-content: space-between; gap: 4px; }
+    .title p { display: none; }
+  }
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+
+<div class="title">
+  <h1>Perjantai</h1>
+  <p>The walls glow only where the future was wrong. Hold still and the room goes dark as it learns you. Move, and the future moon goes to look.</p>
+</div>
+
+<div class="label past" id="lbPast">past</div>
+<div class="label now" id="lbNow">present</div>
+<div class="label future" id="lbFut">future</div>
+
+<button id="toggle">controls</button>
+
+<div id="panel">
+  <h2>Is the future earning its keep?</h2>
+  <div class="meters">
+    <div class="meter wide">
+      <div class="k">skill vs copy-last-frame</div>
+      <div class="v" id="mSkill">—</div>
+      <div class="sub" id="mSkillSub">1 − error(model) / error(just repeat the last frame)</div>
+    </div>
+    <div class="meter"><div class="k">model error</div><div class="v" id="mModel">—</div></div>
+    <div class="meter"><div class="k">copy-last error</div><div class="v" id="mCopy">—</div></div>
+    <div class="meter"><div class="k">dream drift</div><div class="v" id="mDrift">—</div></div>
+    <div class="meter"><div class="k">frames · rate</div><div class="v" id="mFrames">—</div></div>
+  </div>
+
+  <h2>The older past: 20 learned weights</h2>
+  <div class="weights">
+    <div><div class="wgrid" id="wNow"></div><div class="wcap">now 3×3</div></div>
+    <div><div class="wgrid" id="wDiff"></div><div class="wcap">motion 3×3</div></div>
+    <div><div class="wbars"><div class="wbar" id="wMem"><i></i></div><div class="wbar" id="wBias"><i></i></div></div><div class="wcap">mem · bias</div></div>
+  </div>
+
+  <h2>Tenses</h2>
+  <div class="ctl">
+    <div class="row"><label for="sMem">Past moon memory</label><span class="val" id="vMem"></span></div>
+    <input type="range" id="sMem" min="0" max="1" step="0.001" value="0.55">
+    <div class="hint">How long the past moon remembers. Long memory lets a still room be predicted from the past instead of the noisy present.</div>
+  </div>
+  <div class="ctl">
+    <div class="row"><label for="sLr">Plasticity</label><span class="val" id="vLr"></span></div>
+    <input type="range" id="sLr" min="0" max="1" step="0.001" value="0.5">
+    <div class="hint">How fast the 20 weights forget old evidence.</div>
+  </div>
+  <div class="ctl">
+    <div class="row"><label for="sReal">Camera ↔ dream</label><span class="val" id="vReal"></span></div>
+    <input type="range" id="sReal" min="0" max="1" step="0.01" value="1">
+    <div class="hint">Below 100% the brain is fed its own prediction. Learning pauses: a dream must not teach itself. Watch fine detail dissolve, then pull it back to 100%.</div>
+  </div>
+  <div class="ctl">
+    <div class="row"><label for="sHor">Future moon horizon</label><span class="val" id="vHor"></span></div>
+    <input type="range" id="sHor" min="1" max="15" step="1" value="1">
+    <div class="hint">Frames ahead. The model is rolled forward from the present; further out, the future blurs.</div>
+  </div>
+  <div class="ctl">
+    <div class="row"><label for="sGain">Surprise gain</label><span class="val" id="vGain"></span></div>
+    <input type="range" id="sGain" min="1" max="30" step="0.5" value="8">
+  </div>
+
+  <label class="check"><input type="checkbox" id="cLearn" checked><span>Learning<small>Off: the weights freeze where they are.</small></span></label>
+  <label class="check"><input type="checkbox" id="cGaze" checked><span>Future moon goes where surprise lives<small>Off: it parks in the middle.</small></span></label>
+  <label class="check"><input type="checkbox" id="cAttn"><span>Attention gates learning<small>The weights learn mostly from where the future moon is looking.</small></span></label>
+
+  <div class="buttons">
+    <button id="bForget">Forget weights</button>
+    <button id="bView">Flat view</button>
+    <button id="bSource">Use synthetic room</button>
+    <button id="bHide">Hide</button>
+  </div>
+
+  <details class="ledger">
+    <summary>What is real here</summary>
+    <ul>
+      <li><b>Past</b> is two things: the past moon's slow average of what was seen, and the 20 weights, which are the summary of everything learned.</li>
+      <li><b>Present</b> is the frame that just arrived, 64×64.</li>
+      <li><b>Future</b> is the past read through the present: <code>p = w · φ(x, x − x₋₁, mem)</code>. One linear filter shared by every pixel, solved by exact least squares with forgetting.</li>
+      <li><b>Walls</b> show <code>|camera − prediction|</code>, the innovation, above the frame's own noise floor (3×3 average minus the frame mean). The innovation is the only signal that teaches.</li>
+      <li>The future moon moves to the peak of running squared surprise. That is the Kuulustelu rule: look where you expect the answer to split. It is programmed, not learned.</li>
+      <li>This is not a deep video model. It is the smallest model that has to beat copy-last-frame, and the skill meter says honestly whether it does. In tests it beats it by ~47% on a still noisy room and ~91% on smooth noiseless motion; real cameras vary.</li>
+      <li>Measured surprise: the dream does not melt to grey. The learned filter keeps the overall brightness, so the layout persists while fine detail dissolves.</li>
+      <li>Your camera frames never leave this page.</li>
+    </ul>
+  </details>
+</div>
+
+<div id="strip">
+  <div class="tile"><canvas id="cvPast" width="64" height="64"></canvas><div class="cap" style="color:var(--past)">past <em id="capPast"></em></div></div>
+  <div class="tile"><canvas id="cvNow" width="64" height="64"></canvas><div class="cap" style="color:var(--now)">present <em>64×64</em></div></div>
+  <div class="tile"><canvas id="cvFut" width="64" height="64"></canvas><div class="cap" style="color:var(--future)">future <em id="capFut">+1</em></div></div>
+  <div class="tile"><canvas id="cvSur" width="64" height="64"></canvas><div class="cap" style="color:var(--hot)">surprise <em>gaze ◦</em></div></div>
+</div>
+
+<div id="start">
+  <div class="card">
+    <h1>Perjantai</h1>
+    <p>A tiny brain that lives at 64×64 and keeps three moons.</p>
+    <div class="tenses">
+      <b style="color:var(--past)">past</b><span>what it has seen, slowly averaged, plus what it has learned</span>
+      <b style="color:var(--now)">present</b><span>the frame arriving right now</span>
+      <b style="color:var(--future)">future</b><span>the past, read through the present: its guess at the next frame</span>
+    </div>
+    <p>The walls light up only where that guess was wrong. Sit still and the room learns you and goes dark. Wave a hand and it lights up, and the future moon drifts over to look.</p>
+    <div class="buttons">
+      <button class="primary" id="bCam">Open the camera</button>
+      <button id="bSynth">No camera: synthetic room</button>
+    </div>
+    <div id="msg"></div>
+    <p class="small">Everything runs in this page. Frames are never uploaded.</p>
+  </div>
+</div>
+
+<script src="core.js"></script>
+<script>
+'use strict';
+const S = 64;
+const brain = new Perjantai.Brain(S, S);
+const frame = new Float32Array(S * S * 3);
+const $ = (id) => document.getElementById(id);
+
+// ---------------- sources ----------------
+let source = null; // 'cam' | 'synth'
+let video = null, stream = null, synthTimer = null, camTimer = null, synthT = 0;
+const synthRng = Perjantai.makeRng(1234);
+const cap = document.createElement('canvas'); cap.width = S; cap.height = S;
+const capCtx = cap.getContext('2d', { willReadFrequently: true });
+let stepCount = 0, stepRateT0 = performance.now(), stepRate = 0, lastStepMs = 0;
+
+function stepFromImageData() {
+  const d = capCtx.getImageData(0, 0, S, S).data;
+  for (let p = 0, q = 0; p < S * S * 4; p += 4, q += 3) {
+    frame[q] = d[p] / 255; frame[q + 1] = d[p + 1] / 255; frame[q + 2] = d[p + 2] / 255;
+  }
+  doStep();
+}
+function doStep() {
+  const t0 = performance.now();
+  brain.step(frame);
+  lastStepMs = performance.now() - t0;
+  stepCount++;
+  const now = performance.now();
+  if (now - stepRateT0 > 1000) { stepRate = stepCount * 1000 / (now - stepRateT0); stepCount = 0; stepRateT0 = now; }
+  publish();
+}
+
+function grabVideo() {
+  const w = video.videoWidth, h = video.videoHeight; if (!w || !h) return false;
+  const s = Math.min(w, h), sx = (w - s) / 2, sy = (h - s) / 2;
+  capCtx.save(); capCtx.translate(S, 0); capCtx.scale(-1, 1);
+  capCtx.drawImage(video, sx, sy, s, s, 0, 0, S, S);
+  capCtx.restore();
+  return true;
+}
+
+async function startCamera() {
+  $('msg').textContent = '';
+  let s;
+  try {
+    s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 320 }, height: { ideal: 240 } }, audio: false });
+  } catch (e) {
+    $('msg').textContent = 'Camera not available (' + (e && e.name || 'error') + '). Try the synthetic room.';
+    return;
+  }
+  stopSources(); stream = s;
+  video = document.createElement('video');
+  video.playsInline = true; video.muted = true; video.autoplay = true; video.srcObject = stream;
+  video.play().catch(() => {});
+  source = 'cam';
+  // step once per new camera frame: poll the video clock, never step a repeated frame
+  let lastT = -1;
+  camTimer = setInterval(() => {
+    if (source !== 'cam' || video.readyState < 2) return;
+    const ct = video.currentTime; if (ct === lastT) return; lastT = ct;
+    if (grabVideo()) stepFromImageData();
+  }, 12);
+  $('bSource').textContent = 'Use synthetic room';
+  begin();
+}
+function startSynth() {
+  stopSources();
+  source = 'synth';
+  synthTimer = setInterval(() => { Perjantai.synthFrame(synthT++, S, S, frame, synthRng, {}); doStep(); }, 33);
+  $('bSource').textContent = 'Use camera';
+  begin();
+}
+function stopSources() {
+  if (synthTimer) { clearInterval(synthTimer); synthTimer = null; }
+  if (camTimer) { clearInterval(camTimer); camTimer = null; }
+  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+  source = null;
+}
+function begin() { $('start').style.display = 'none'; }
+
+$('bCam').onclick = startCamera;
+$('bSynth').onclick = startSynth;
+$('bSource').onclick = () => (source === 'synth' ? startCamera() : startSynth());
+
+// ---------------- textures & tiles ----------------
+const px = { past: new Uint8ClampedArray(S * S * 4), now: new Uint8ClampedArray(S * S * 4),
+             fut: new Uint8ClampedArray(S * S * 4), sur: new Uint8ClampedArray(S * S * 4) };
+let surGain = 8;
+function heat(s, out, p) {
+  s = s < 0 ? 0 : s > 1 ? 1 : s;
+  const sm = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+  out[p] = 255 * sm(0.02, 0.5, s);
+  out[p + 1] = 255 * 0.85 * sm(0.35, 0.85, s);
+  out[p + 2] = 255 * (0.45 * sm(0.0, 0.25, s) * (1 - sm(0.35, 0.65, s)) + sm(0.8, 1.0, s));
+  out[p + 3] = 255;
+}
+function fill(dst, src) {
+  for (let p = 0, q = 0; q < S * S * 3; p += 4, q += 3) {
+    dst[p] = src[q] * 255; dst[p + 1] = src[q + 1] * 255; dst[p + 2] = src[q + 2] * 255; dst[p + 3] = 255;
+  }
+}
+const tiles = {};
+for (const k of ['Past', 'Now', 'Fut', 'Sur']) { const c = $('cv' + k); tiles[k] = { ctx: c.getContext('2d'), img: new ImageData(S, S) }; }
+// Display surprise above the frame's own noise floor: a 3x3 average lets sensor
+// noise cancel while real structure survives, then the frame mean is subtracted.
+const errB = new Float32Array(S * S);
+function publish() {
+  fill(px.past, brain.mem); fill(px.now, brain.x); fill(px.fut, brain.predK);
+  const e = brain.err; let mean = 0;
+  for (let i = 0; i < S; i++) for (let j = 0; j < S; j++) {
+    let a = 0, n = 0;
+    for (let di = -1; di <= 1; di++) { const ii = i + di; if (ii < 0 || ii >= S) continue;
+      for (let dj = -1; dj <= 1; dj++) { const jj = j + dj; if (jj < 0 || jj >= S) continue; a += e[ii * S + jj]; n++; } }
+    errB[i * S + j] = a / n; mean += a / n;
+  }
+  mean /= S * S;
+  for (let p = 0; p < S * S; p++) heat(Math.max(0, errB[p] - 1.15 * mean) * surGain, px.sur, p * 4);
+  dirtyTex = true;
+  tiles.Past.img.data.set(px.past); tiles.Past.ctx.putImageData(tiles.Past.img, 0, 0);
+  tiles.Now.img.data.set(px.now); tiles.Now.ctx.putImageData(tiles.Now.img, 0, 0);
+  tiles.Fut.img.data.set(px.fut); tiles.Fut.ctx.putImageData(tiles.Fut.img, 0, 0);
+  tiles.Sur.img.data.set(px.sur); const c = tiles.Sur.ctx; c.putImageData(tiles.Sur.img, 0, 0);
+  if ($('cGaze').checked) {
+    c.strokeStyle = 'rgba(255,179,92,0.95)'; c.lineWidth = 1;
+    c.beginPath(); c.arc(brain.gaze.u * S, brain.gaze.v * S, 5, 0, Math.PI * 2); c.stroke();
+  }
+}
+
+// ---------------- controls ----------------
+const memFromSlider = (s) => Math.exp(Math.log(0.3) + (Math.log(0.004) - Math.log(0.3)) * s); // right = longer memory
+const lrFromSlider = (s) => Math.exp(Math.log(0.005) + (Math.log(0.3) - Math.log(0.005)) * s);
+function syncControls() {
+  const m = memFromSlider(+$('sMem').value); brain.params.memRate = m;
+  const half = Math.log(2) / -Math.log(1 - m);
+  $('vMem').textContent = 'half-life ' + (half < 10 ? half.toFixed(1) : Math.round(half)) + ' fr';
+  $('capPast').textContent = '½ ' + (half < 10 ? half.toFixed(1) : Math.round(half)) + ' fr';
+  const l = lrFromSlider(+$('sLr').value); brain.params.lr = l;
+  const lh = Math.log(2) / -Math.log(1 - l);
+  $('vLr').textContent = 'evidence half-life ' + (lh < 10 ? lh.toFixed(1) : Math.round(lh)) + ' fr';
+  brain.params.reality = +$('sReal').value;
+  $('vReal').textContent = Math.round(brain.params.reality * 100) + '% camera';
+  brain.params.horizon = +$('sHor').value;
+  $('vHor').textContent = '+' + brain.params.horizon + ' fr';
+  $('capFut').textContent = '+' + brain.params.horizon;
+  surGain = +$('sGain').value; $('vGain').textContent = '×' + surGain;
+  brain.params.learn = $('cLearn').checked;
+  brain.params.attentionGatesLearning = $('cAttn').checked;
+}
+for (const id of ['sMem', 'sLr', 'sReal', 'sHor', 'sGain', 'cLearn', 'cAttn', 'cGaze']) $(id).addEventListener('input', syncControls);
+syncControls();
+$('bForget').onclick = () => brain.resetWeights();
+let flat = false;
+$('bView').onclick = () => { flat = !flat; $('strip').classList.toggle('flat', flat); $('bView').textContent = flat ? 'Room view' : 'Flat view'; };
+$('bHide').onclick = () => { $('panel').classList.add('hidden'); $('toggle').classList.add('show'); };
+$('toggle').onclick = () => { $('panel').classList.remove('hidden'); $('toggle').classList.remove('show'); };
+
+// weights display
+function makeCells(el) { const a = []; for (let i = 0; i < 9; i++) { const d = document.createElement('div'); d.className = 'wcell'; el.appendChild(d); a.push(d); } return a; }
+const cellsNow = makeCells($('wNow')), cellsDiff = makeCells($('wDiff'));
+function wColor(v, scale) {
+  const a = Math.min(1, Math.abs(v) / scale);
+  return v >= 0 ? `rgba(255,179,92,${0.08 + 0.92 * a})` : `rgba(138,184,255,${0.08 + 0.92 * a})`;
+}
+function setBar(el, v) {
+  const i = el.querySelector('i'); const a = Math.min(1, Math.abs(v));
+  i.style.height = (a * 50) + '%'; i.style.background = v >= 0 ? 'var(--future)' : 'var(--past)';
+  if (v >= 0) { i.style.bottom = '50%'; i.style.top = ''; } else { i.style.top = '50%'; i.style.bottom = ''; }
+  el.title = v.toFixed(3);
+}
+const fmt = (x) => x.toExponential(1).replace('e-', 'e−');
+function updateMeters() {
+  const st = brain.stats;
+  const sk = st.skill * 100;
+  $('mSkill').textContent = (st.t > 5 ? (sk >= 0 ? '+' : '') + sk.toFixed(1) + '%' : '—');
+  $('mSkill').style.color = sk > 1 ? 'var(--good)' : sk < -1 ? 'var(--bad)' : 'var(--ink)';
+  $('mSkillSub').textContent = brain.params.reality < 0.999
+    ? 'dreaming — measured against the camera it is not seeing'
+    : (brain.params.learn ? '1 − error(model) / error(repeat last frame)' : 'weights frozen');
+  $('mModel').textContent = fmt(st.mseModel);
+  $('mCopy').textContent = fmt(st.mseCopy);
+  $('mDrift').textContent = fmt(st.drift);
+  $('mFrames').textContent = st.t + ' · ' + stepRate.toFixed(0) + '/s';
+  $('mFrames').title = 'brain step ' + lastStepMs.toFixed(1) + ' ms';
+  const w = brain.w;
+  for (let k = 0; k < 9; k++) { cellsNow[k].style.background = wColor(w[k], 0.5); cellsNow[k].title = w[k].toFixed(3);
+                                cellsDiff[k].style.background = wColor(w[k + 9], 0.25); cellsDiff[k].title = w[k + 9].toFixed(3); }
+  setBar($('wMem'), w[18]); setBar($('wBias'), w[19] * 5);
+}
+setInterval(updateMeters, 200);
+if (innerWidth < 720) { $('panel').classList.add('hidden'); $('toggle').classList.add('show'); }
+
+// ---------------- WebGL room ----------------
+const canvas = $('gl');
+const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, preserveDrawingBuffer: false });
+let dirtyTex = false;
+const VS = `#version 300 es
+in vec2 a; void main(){ gl_Position = vec4(a, 0.0, 1.0); }`;
+const FS = `#version 300 es
+precision highp float;
+out vec4 o;
+uniform vec2 uRes;
+uniform float uTime;
+uniform vec3 uCam, uTgt;
+uniform float uFL;
+uniform vec4 uMoon0, uMoon1, uMoon2;
+uniform sampler2D tPast, tNow, tFut, tSur;
+const vec3 RMIN = vec3(-2.2, -1.3, -2.2);
+const vec3 RMAX = vec3( 2.2,  1.3,  2.2);
+
+float sphere(vec3 ro, vec3 rd, vec4 s) {
+  vec3 oc = ro - s.xyz; float b = dot(oc, rd); float c = dot(oc, oc) - s.w * s.w;
+  float h = b * b - c; if (h < 0.0) return -1.0; h = sqrt(h);
+  float t = -b - h; if (t > 1e-3) return t; t = -b + h; return t > 1e-3 ? t : -1.0;
+}
+float box(vec3 ro, vec3 rd, out vec3 n) {
+  vec3 inv = 1.0 / rd; vec3 t1 = (RMIN - ro) * inv, t2 = (RMAX - ro) * inv;
+  vec3 tf = max(t1, t2); float t = min(min(tf.x, tf.y), tf.z);
+  if (t == tf.x) n = vec3(-sign(rd.x), 0.0, 0.0);
+  else if (t == tf.y) n = vec3(0.0, -sign(rd.y), 0.0);
+  else n = vec3(0.0, 0.0, -sign(rd.z));
+  return t;
+}
+float grid(vec2 uv) {
+  vec2 g = abs(fract(uv * 8.0) - 0.5);
+  float l = smoothstep(0.485, 0.5, max(g.x, g.y));
+  return l;
+}
+vec3 wall(vec3 p, vec3 n, out float refl) {
+  vec2 uv; float k;
+  float H = RMAX.y - RMIN.y;
+  if (n.z > 0.5)       { uv = vec2( p.x / H + 0.5, p.y / H + 0.5); k = 1.0;  refl = 0.30; }
+  else if (n.z < -0.5) { uv = vec2(-p.x / H + 0.5, p.y / H + 0.5); k = 0.7;  refl = 0.30; }
+  else if (n.x > 0.5)  { uv = vec2( p.z / H + 0.5, p.y / H + 0.5); k = 0.75; refl = 0.35; }
+  else if (n.x < -0.5) { uv = vec2(-p.z / H + 0.5, p.y / H + 0.5); k = 0.75; refl = 0.35; }
+  else if (n.y > 0.5)  { uv = vec2( p.x / H + 0.5, -p.z / H + 0.5); k = 0.45; refl = 0.55; }
+  else                 { uv = vec2( p.x / H + 0.5,  p.z / H + 0.5); k = 0.25; refl = 0.20; }
+  vec3 now = texture(tNow, uv).rgb;
+  vec3 sur = texture(tSur, uv).rgb;
+  vec3 base = vec3(0.012, 0.013, 0.018) + now * 0.10 * k;
+  vec3 c = base + sur * 2.2 * k;
+  c += vec3(0.05, 0.05, 0.06) * grid(uv) * k;
+  return c;
+}
+vec3 moonTex(int i, vec2 uv) {
+  if (i == 0) return texture(tPast, uv).rgb;
+  if (i == 1) return texture(tNow, uv).rgb;
+  return texture(tFut, uv).rgb;
+}
+vec3 moonTint(int i) {
+  if (i == 0) return vec3(0.54, 0.72, 1.0);
+  if (i == 1) return vec3(0.95, 0.94, 0.91);
+  return vec3(1.0, 0.70, 0.36);
+}
+vec3 moon(int i, vec4 s, vec3 p, vec3 n, vec3 rd) {
+  vec3 w = normalize(s.xyz - uCam);
+  vec3 r = normalize(cross(w, vec3(0.0, 1.0, 0.0)));
+  vec3 u = cross(r, w);
+  vec3 rf = refract(rd, n, 1.0 / 1.45);
+  vec2 q = vec2(dot(n, r), dot(n, u));
+  q += 0.10 * vec2(dot(rf, r), dot(rf, u));
+  float l2 = dot(q, q);
+  vec2 uv = 0.5 + 0.5 * q * (0.82 + 0.28 * l2);
+  vec3 img = moonTex(i, clamp(uv, 0.0, 1.0));
+  float facing = clamp(dot(n, -rd), 0.0, 1.0);
+  vec3 tint = moonTint(i);
+  img = mix(vec3(dot(img, vec3(0.299, 0.587, 0.114))), img, 1.35);
+  vec3 c = img * 1.7 * (0.3 + 0.7 * smoothstep(0.0, 0.55, facing));
+  c = mix(c, c * tint, 0.2);
+  c += tint * 0.8 * pow(1.0 - facing, 3.0);
+  vec3 L = normalize(vec3(-0.4, 0.8, 0.5));
+  c += vec3(1.0) * 0.6 * pow(max(dot(reflect(rd, n), L), 0.0), 60.0);
+  return c;
+}
+void main() {
+  vec2 uv = (gl_FragCoord.xy - 0.5 * uRes) / uRes.y;
+  vec3 f = normalize(uTgt - uCam);
+  vec3 r = normalize(cross(f, vec3(0.0, 1.0, 0.0)));
+  vec3 u = cross(r, f);
+  vec3 ro = uCam, rd = normalize(uv.x * r + uv.y * u + uFL * f);
+  vec3 col = vec3(0.0), thr = vec3(1.0);
+  for (int b = 0; b < 4; b++) {
+    float tBest = 1e9; int hit = -1; vec4 S;
+    float t0 = sphere(ro, rd, uMoon0); if (t0 > 0.0 && t0 < tBest) { tBest = t0; hit = 0; S = uMoon0; }
+    float t1 = sphere(ro, rd, uMoon1); if (t1 > 0.0 && t1 < tBest) { tBest = t1; hit = 1; S = uMoon1; }
+    float t2 = sphere(ro, rd, uMoon2); if (t2 > 0.0 && t2 < tBest) { tBest = t2; hit = 2; S = uMoon2; }
+    vec3 n; float tb = box(ro, rd, n);
+    if (hit < 0 || tb < tBest) {
+      vec3 p = ro + rd * tb; float refl;
+      vec3 c = wall(p, n, refl);
+      col += thr * c * (1.0 - refl);
+      thr *= refl * vec3(0.92, 0.95, 1.0);
+      ro = p + n * 1e-3; rd = reflect(rd, n);
+    } else {
+      vec3 p = ro + rd * tBest; vec3 nn = normalize(p - S.xyz);
+      float F = 0.08 + 0.92 * pow(1.0 - clamp(dot(nn, -rd), 0.0, 1.0), 5.0);
+      F = max(F, 0.18);
+      col += thr * moon(hit, S, p, nn, rd) * (1.0 - F);
+      thr *= F;
+      ro = p + nn * 1e-3; rd = reflect(rd, nn);
+    }
+    if (max(thr.x, max(thr.y, thr.z)) < 0.01) break;
+  }
+  col = col / (1.0 + col * 0.6);
+  col = pow(col, vec3(0.92));
+  float v = 1.0 - 0.35 * dot(uv * 0.9, uv * 0.9);
+  col *= v;
+  col += (fract(sin(dot(gl_FragCoord.xy + uTime, vec2(12.9898, 78.233))) * 43758.5453) - 0.5) / 255.0;
+  o = vec4(col, 1.0);
+}`;
+
+let prog, uni = {}, texs = {};
+function compile(type, src) {
+  const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+  return s;
+}
+function initGL() {
+  if (!gl) return false;
+  prog = gl.createProgram();
+  gl.attachShader(prog, compile(gl.VERTEX_SHADER, VS));
+  gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, FS));
+  gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+  gl.useProgram(prog);
+  const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+  const loc = gl.getAttribLocation(prog, 'a'); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+  for (const n of ['uRes', 'uFL', 'uTime', 'uCam', 'uTgt', 'uMoon0', 'uMoon1', 'uMoon2', 'tPast', 'tNow', 'tFut', 'tSur']) uni[n] = gl.getUniformLocation(prog, n);
+  ['past', 'now', 'fut', 'sur'].forEach((k, i) => {
+    const t = gl.createTexture(); gl.activeTexture(gl.TEXTURE0 + i); gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, S, S, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.MIRRORED_REPEAT);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.MIRRORED_REPEAT);
+    texs[k] = { t, unit: i };
+  });
+  gl.uniform1i(uni.tPast, 0); gl.uniform1i(uni.tNow, 1); gl.uniform1i(uni.tFut, 2); gl.uniform1i(uni.tSur, 3);
+  return true;
+}
+let glOK = false;
+try { glOK = initGL(); } catch (e) { console.error(e); glOK = false; }
+if (!glOK) { flat = true; $('strip').classList.add('flat'); $('bView').style.display = 'none'; }
+
+function uploadTextures() {
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+  for (const k of ['past', 'now', 'fut', 'sur']) {
+    gl.activeTexture(gl.TEXTURE0 + texs[k].unit); gl.bindTexture(gl.TEXTURE_2D, texs[k].t);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, S, S, gl.RGBA, gl.UNSIGNED_BYTE, px[k]);
+  }
+}
+
+// camera & moons
+let drag = 0, dragV = 0, dragging = false, lastX = 0;
+canvas.addEventListener('pointerdown', (e) => { dragging = true; lastX = e.clientX; canvas.setPointerCapture(e.pointerId); });
+canvas.addEventListener('pointermove', (e) => { if (!dragging) return; drag += (e.clientX - lastX) * 0.004; lastX = e.clientX; });
+canvas.addEventListener('pointerup', () => { dragging = false; });
+const futPos = { x: 0, y: 0 };
+const H = 2.6;
+function v3sub(a, b) { return [a[0] - b[0], a[1] - b[1], a[2] - b[2]]; }
+function dot(a, b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
+function norm(a) { const l = Math.hypot(a[0], a[1], a[2]); return [a[0] / l, a[1] / l, a[2] / l]; }
+function cross(a, b) { return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]; }
+const focal = () => { const a = innerWidth / innerHeight; return a < 1.1 ? 1.35 * Math.max(0.5, a * 1.15) : 1.35; };
+function project(P, cam, tgt, W, Hh) {
+  const fl = focal();
+  const f = norm(v3sub(tgt, cam)), r = norm(cross(f, [0, 1, 0])), u = cross(r, f);
+  const d = v3sub(P, cam); const z = dot(d, f); if (z <= 0.05) return null;
+  const x = dot(d, r) / z * fl, y = dot(d, u) / z * fl;
+  return { x: x * Hh + 0.5 * W, y: 0.5 * Hh - y * Hh, s: Hh * fl / z };
+}
+function resize() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+  const w = Math.floor(innerWidth * dpr), h = Math.floor(innerHeight * dpr);
+  if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+}
+const lb = { past: $('lbPast'), now: $('lbNow'), fut: $('lbFut') };
+function frameLoop(tms) {
+  requestAnimationFrame(frameLoop);
+  if (!glOK || flat) { for (const k in lb) lb[k].style.display = 'none'; if (glOK) { gl.clearColor(0.03, 0.03, 0.04, 1); gl.clear(gl.COLOR_BUFFER_BIT); } return; }
+  resize();
+  const t = tms * 0.001;
+  if (dirtyTex) { uploadTextures(); dirtyTex = false; }
+  const a = drag + 0.28 * Math.sin(t * 0.07);
+  const cam = [Math.sin(a) * 1.25, 0.08 + 0.12 * Math.sin(t * 0.05), 1.6 * Math.cos(a) + 0.15];
+  const tgt = [0, -0.02, -1.6];
+  const gz = $('cGaze').checked ? brain.gaze : { u: 0.5, v: 0.5 };
+  const gx = (gz.u - 0.5) * H * 0.9, gy = (0.5 - gz.v) * H * 0.85;
+  futPos.x += 0.08 * (gx - futPos.x); futPos.y += 0.08 * (gy - futPos.y);
+  const m0 = [-1.2, 0.22 + 0.04 * Math.sin(t * 0.6), -1.0, 0.42];
+  const m1 = [0.55, -0.32 + 0.04 * Math.sin(t * 0.5 + 1), -0.9, 0.40];
+  const m2 = [futPos.x, futPos.y, -1.7, 0.30];
+  gl.viewport(0, 0, canvas.width, canvas.height);
+  gl.useProgram(prog);
+  gl.uniform2f(uni.uRes, canvas.width, canvas.height);
+  gl.uniform1f(uni.uTime, t % 100);
+  gl.uniform1f(uni.uFL, focal());
+  gl.uniform3f(uni.uCam, cam[0], cam[1], cam[2]);
+  gl.uniform3f(uni.uTgt, tgt[0], tgt[1], tgt[2]);
+  gl.uniform4f(uni.uMoon0, ...m0); gl.uniform4f(uni.uMoon1, ...m1); gl.uniform4f(uni.uMoon2, ...m2);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  // labels
+  const W = innerWidth, Hh = innerHeight;
+  [[lb.past, m0], [lb.now, m1], [lb.fut, m2]].forEach(([el, m]) => {
+    const p = project([m[0], m[1], m[2]], cam, tgt, W, Hh);
+    if (!p) { el.style.display = 'none'; return; }
+    el.style.display = 'block'; el.style.left = p.x + 'px'; el.style.top = (p.y - m[3] * p.s - 6) + 'px';
+  });
+  lb.fut.textContent = 'future +' + brain.params.horizon;
+}
+requestAnimationFrame(frameLoop);
+
+// test hooks
+window.__perjantai = { brain, startSynth, startCamera, get glOK() { return glOK; }, get source() { return source; } };
+</script>
+</body>
+</html>
