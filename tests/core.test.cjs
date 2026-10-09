@@ -83,4 +83,32 @@ test('attention-gated learning still learns and stays finite', () => {
   assert(b.w.every(Number.isFinite)); assert(b.stats.skill > 0.2, 'skill ' + b.stats.skill);
 });
 
+test('precision: the belief is much closer to the clean scene than the camera', () => {
+  const b = new Brain(W, H); b.params.precision = true; const rng = makeRng(11), rc = makeRng(1);
+  const f = new Float32Array(W * H * 3), clean = new Float32Array(W * H * 3); let a = 0, c = 0;
+  for (let t = 0; t < 300; t++) {
+    synthFrame(t, W, H, f, rng, { still: true }); b.step(f);
+    if (t >= 250) { synthFrame(t, W, H, clean, rc, { still: true, noise: 0 });
+      for (let q = 0; q < f.length; q++) { a += (b.x[q] - clean[q]) ** 2; c += (f[q] - clean[q]) ** 2; } }
+  }
+  assert(a < 0.3 * c, `posterior ${a} camera ${c}`);
+});
+
+test('precision: a sudden object breaks through in its first frame', () => {
+  const b = new Brain(W, H); b.params.precision = true; const rng = makeRng(11);
+  const f = new Float32Array(W * H * 3);
+  for (let t = 0; t <= 250; t++) { synthFrame(t, W, H, f, rng, { still: true, newBlobAt: 250 }); b.step(f); }
+  // centre of the new patch (u 0.7, v 0.3)
+  const p = Math.floor(0.3 * H) * W + Math.floor(0.7 * W);
+  assert(b.gain[p] > 0.8, 'gain at the new object ' + b.gain[p]);
+  assert(Math.abs(b.x[p * 3] - f[p * 3]) < 0.08, 'belief vs eye ' + Math.abs(b.x[p * 3] - f[p * 3]));
+});
+
+test('phase moon runs, stays finite, and is used on fast translation', () => {
+  const b = new Brain(W, H); b.params.phase = true; const rng = makeRng(11); const f = new Float32Array(W * H * 3);
+  for (let t = 0; t < 200; t++) { synthFrame(t, W, H, f, rng, { scene: 'translate', vx: 4.5, noise: 0 }); b.step(f); }
+  assert(b.w.every(Number.isFinite));
+  assert(Math.abs(b.w[20]) + Math.abs(b.w[21]) > 1e-3, 'phase weights ' + b.w[20] + ' ' + b.w[21]);
+});
+
 console.log(`\n${pass} passed`);

@@ -66,12 +66,12 @@
   button.primary { background: var(--future); color: #1a1006; border-color: transparent; font-weight: 600; }
   button.primary:hover { filter: brightness(1.08); }
 
-  .weights { display: grid; grid-template-columns: auto auto auto; gap: 10px; align-items: end; margin-top: 4px; }
+  .weights { display: grid; grid-template-columns: auto auto auto; gap: 8px; align-items: end; margin-top: 4px; }
   .wgrid { display: grid; grid-template-columns: repeat(3, 20px); gap: 2px; }
   .wcell { width: 20px; height: 20px; border-radius: 3px; }
   .wcap { font: 10px var(--mono); color: var(--dim); margin-top: 3px; text-align: center; }
-  .wbars { display: flex; gap: 6px; }
-  .wbar { width: 20px; height: 62px; border-radius: 3px; background: rgba(255,255,255,0.04); position: relative; overflow: hidden; }
+  .wbars { display: flex; gap: 4px; }
+  .wbar { width: 14px; height: 62px; border-radius: 3px; background: rgba(255,255,255,0.04); position: relative; overflow: hidden; }
   .wbar i { position: absolute; left: 0; right: 0; }
 
   #strip { position: fixed; left: 14px; bottom: 14px; display: flex; gap: 8px; }
@@ -133,15 +133,16 @@
     </div>
     <div class="meter"><div class="k">model error</div><div class="v" id="mModel">—</div></div>
     <div class="meter"><div class="k">copy-last error</div><div class="v" id="mCopy">—</div></div>
-    <div class="meter"><div class="k">dream drift</div><div class="v" id="mDrift">—</div></div>
-    <div class="meter"><div class="k">frames · rate</div><div class="v" id="mFrames">—</div></div>
+    <div class="meter"><div class="k">trust in the eye (K)</div><div class="v" id="mGain">—</div><div class="sub" id="mNoise">noise floor —</div></div>
+    <div class="meter"><div class="k" id="kDrift">belief vs eye</div><div class="v" id="mDrift">—</div></div>
+    <div class="meter wide"><div class="k">frames · rate</div><div class="v" id="mFrames">—</div><div class="sub" id="mDup">duplicate frames skipped: 0</div></div>
   </div>
 
   <h2>The older past: 20 learned weights</h2>
   <div class="weights">
     <div><div class="wgrid" id="wNow"></div><div class="wcap">now 3×3</div></div>
     <div><div class="wgrid" id="wDiff"></div><div class="wcap">motion 3×3</div></div>
-    <div><div class="wbars"><div class="wbar" id="wMem"><i></i></div><div class="wbar" id="wBias"><i></i></div></div><div class="wcap">mem · bias</div></div>
+    <div><div class="wbars"><div class="wbar" id="wMem"><i></i></div><div class="wbar" id="wBias"><i></i></div><div class="wbar" id="wPh1"><i></i></div><div class="wbar" id="wPh2"><i></i></div></div><div class="wcap">mem · bias · phase ×2</div></div>
   </div>
 
   <h2>Tenses</h2>
@@ -170,6 +171,8 @@
     <input type="range" id="sGain" min="1" max="30" step="0.5" value="8">
   </div>
 
+  <label class="check"><input type="checkbox" id="cPrec" checked><span>Precision: the present is a belief<small>Present = prediction + K·(eye − prediction). K is low where the room is predictable, so the present moon shows a denoised belief. Anything new breaks through at once.</small></span></label>
+  <label class="check"><input type="checkbox" id="cPhase"><span>Phase moon (experimental)<small>Remembers phase velocity in a complex Gabor bank and offers it to the predictor. Measured: +1.7 pts on the room, +3–4 pts only on fast motion, killed on its own pre-registered test. Costs ~8 ms/frame.</small></span></label>
   <label class="check"><input type="checkbox" id="cLearn" checked><span>Learning<small>Off: the weights freeze where they are.</small></span></label>
   <label class="check"><input type="checkbox" id="cGaze" checked><span>Future moon goes where surprise lives<small>Off: it parks in the middle.</small></span></label>
   <label class="check"><input type="checkbox" id="cAttn"><span>Attention gates learning<small>The weights learn mostly from where the future moon is looking.</small></span></label>
@@ -188,6 +191,8 @@
       <li><b>Present</b> is the frame that just arrived, 64×64.</li>
       <li><b>Future</b> is the past read through the present: <code>p = w · φ(x, x − x₋₁, mem)</code>. One linear filter shared by every pixel, solved by exact least squares with forgetting.</li>
       <li><b>Walls</b> show <code>|camera − prediction|</code>, the innovation, above the frame's own noise floor (3×3 average minus the frame mean). The innovation is the only signal that teaches.</li>
+      <li><b>Precision</b> (on by default): the present moon shows a belief, <code>p + K·(eye − p)</code>, with per-pixel K = 1 − R / max(running surprise, this frame's local surprise). On a still noisy room the belief is 7.5× closer to the clean scene than the raw camera, and a sudden new object passes through in its first frame (8% error).</li>
+      <li><b>Phase moon</b> (off by default): its pre-registered test was killed, since the linear filter already gets 98.7% on smooth slow translation. It earns +3–4 points only on fast motion. Kept as an experiment.</li>
       <li>The future moon moves to the peak of running squared surprise. That is the Kuulustelu rule: look where you expect the answer to split. It is programmed, not learned.</li>
       <li>This is not a deep video model. It is the smallest model that has to beat copy-last-frame, and the skill meter says honestly whether it does. In tests it beats it by ~47% on a still noisy room and ~91% on smooth noiseless motion; real cameras vary.</li>
       <li>Measured surprise: the dream does not melt to grey. The learned filter keeps the overall brightness, so the layout persists while fine detail dissolves.</li>
@@ -198,7 +203,7 @@
 
 <div id="strip">
   <div class="tile"><canvas id="cvPast" width="64" height="64"></canvas><div class="cap" style="color:var(--past)">past <em id="capPast"></em></div></div>
-  <div class="tile"><canvas id="cvNow" width="64" height="64"></canvas><div class="cap" style="color:var(--now)">present <em>64×64</em></div></div>
+  <div class="tile"><canvas id="cvNow" width="64" height="64"></canvas><div class="cap" style="color:var(--now)">present <em id="capNow">belief</em></div></div>
   <div class="tile"><canvas id="cvFut" width="64" height="64"></canvas><div class="cap" style="color:var(--future)">future <em id="capFut">+1</em></div></div>
   <div class="tile"><canvas id="cvSur" width="64" height="64"></canvas><div class="cap" style="color:var(--hot)">surprise <em>gaze ◦</em></div></div>
 </div>
@@ -238,8 +243,17 @@ const cap = document.createElement('canvas'); cap.width = S; cap.height = S;
 const capCtx = cap.getContext('2d', { willReadFrequently: true });
 let stepCount = 0, stepRateT0 = performance.now(), stepRate = 0, lastStepMs = 0;
 
+// Exact-duplicate guard: a live camera can hand us the same frame twice. Feeding a
+// repeat teaches the brain that "copy the last frame" is perfect, and it collapses to it.
+let lastCap = null, dupSkipped = 0;
 function stepFromImageData() {
   const d = capCtx.getImageData(0, 0, S, S).data;
+  if (lastCap) {
+    let same = true;
+    for (let p = 0; p < d.length; p += 4) if (d[p] !== lastCap[p] || d[p + 1] !== lastCap[p + 1] || d[p + 2] !== lastCap[p + 2]) { same = false; break; }
+    if (same) { dupSkipped++; return; }
+  }
+  lastCap = d;
   for (let p = 0, q = 0; p < S * S * 4; p += 4, q += 3) {
     frame[q] = d[p] / 255; frame[q + 1] = d[p + 1] / 255; frame[q + 2] = d[p + 2] / 255;
   }
@@ -274,17 +288,39 @@ async function startCamera() {
     return;
   }
   stopSources(); stream = s;
-  video = document.createElement('video');
+  if (!video) {
+    video = document.createElement('video');
+    // in the DOM (invisible) so the browser keeps delivering frame callbacks
+    video.style.cssText = 'position:fixed;left:0;top:0;width:2px;height:2px;opacity:0;pointer-events:none';
+    document.body.appendChild(video);
+  }
   video.playsInline = true; video.muted = true; video.autoplay = true; video.srcObject = stream;
   video.play().catch(() => {});
   source = 'cam';
-  // step once per new camera frame: poll the video clock, never step a repeated frame
-  let lastT = -1;
+  lastCap = null;
+  const myStream = stream;
+  // Step once per *new* camera frame. On a live stream video.currentTime runs
+  // continuously, so it cannot tell frames apart; the frame callback can.
+  let lastFrameStep = performance.now();
+  if ('requestVideoFrameCallback' in HTMLVideoElement.prototype) {
+    let lastPresented = -1;
+    const onFrame = (now, meta) => {
+      if (source !== 'cam' || stream !== myStream) return;
+      if (meta.presentedFrames !== lastPresented) {
+        lastPresented = meta.presentedFrames;
+        if (grabVideo()) { stepFromImageData(); lastFrameStep = performance.now(); }
+      }
+      video.requestVideoFrameCallback(onFrame);
+    };
+    video.requestVideoFrameCallback(onFrame);
+  }
+  // Fallback when frame callbacks are unavailable or stall: poll at ~30 Hz;
+  // the exact-duplicate guard keeps repeats out.
   camTimer = setInterval(() => {
     if (source !== 'cam' || video.readyState < 2) return;
-    const ct = video.currentTime; if (ct === lastT) return; lastT = ct;
+    if (performance.now() - lastFrameStep < 500) return;
     if (grabVideo()) stepFromImageData();
-  }, 12);
+  }, 33);
   $('bSource').textContent = 'Use synthetic room';
   begin();
 }
@@ -370,8 +406,11 @@ function syncControls() {
   surGain = +$('sGain').value; $('vGain').textContent = '×' + surGain;
   brain.params.learn = $('cLearn').checked;
   brain.params.attentionGatesLearning = $('cAttn').checked;
+  brain.params.precision = $('cPrec').checked;
+  brain.params.phase = $('cPhase').checked;
+  $('capNow').textContent = brain.params.precision ? 'belief' : 'camera';
 }
-for (const id of ['sMem', 'sLr', 'sReal', 'sHor', 'sGain', 'cLearn', 'cAttn', 'cGaze']) $(id).addEventListener('input', syncControls);
+for (const id of ['sMem', 'sLr', 'sReal', 'sHor', 'sGain', 'cLearn', 'cAttn', 'cGaze', 'cPrec', 'cPhase']) $(id).addEventListener('input', syncControls);
 syncControls();
 $('bForget').onclick = () => brain.resetWeights();
 let flat = false;
@@ -404,12 +443,17 @@ function updateMeters() {
   $('mModel').textContent = fmt(st.mseModel);
   $('mCopy').textContent = fmt(st.mseCopy);
   $('mDrift').textContent = fmt(st.drift);
+  $('kDrift').textContent = brain.params.reality < 0.999 ? 'dream drift' : 'belief vs eye';
+  $('mGain').textContent = brain.params.precision ? st.meanGain.toFixed(2) : '1 (off)';
+  $('mNoise').textContent = brain.params.precision ? 'noise floor R ' + fmt(st.noiseVar) : 'precision off';
+  $('mDup').textContent = 'duplicate frames skipped: ' + dupSkipped;
   $('mFrames').textContent = st.t + ' · ' + stepRate.toFixed(0) + '/s';
-  $('mFrames').title = 'brain step ' + lastStepMs.toFixed(1) + ' ms';
+  $('mFrames').title = 'brain step ' + lastStepMs.toFixed(1) + ' ms · duplicate frames skipped ' + dupSkipped;
   const w = brain.w;
   for (let k = 0; k < 9; k++) { cellsNow[k].style.background = wColor(w[k], 0.5); cellsNow[k].title = w[k].toFixed(3);
                                 cellsDiff[k].style.background = wColor(w[k + 9], 0.25); cellsDiff[k].title = w[k + 9].toFixed(3); }
   setBar($('wMem'), w[18]); setBar($('wBias'), w[19] * 5);
+  setBar($('wPh1'), w[20] * 20); setBar($('wPh2'), w[21] * 20);
 }
 setInterval(updateMeters, 200);
 if (innerWidth < 720) { $('panel').classList.add('hidden'); $('toggle').classList.add('show'); }

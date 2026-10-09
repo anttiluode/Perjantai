@@ -29,6 +29,28 @@ gaze      the future moon goes to the peak of the running mean of e²
 
 The gaze rule is the one that won in [Kuulustelu](https://github.com/anttiluode/Kuulustelu): look where you expect the answer to split. Here it is programmed, not learned.
 
+## Round 2: precision and phase
+
+Predictions were frozen in [PROTOCOL.md](PROTOCOL.md) and pushed before any code or measurement. Run `node tests/round2.eval.cjs`.
+
+| # | prediction | result | verdict |
+|---|---|---|---|
+| P1 | duplicated frames collapse skill below 10% | 40% → 24% | **failed**: duplicates hurt, but they don't explain a collapse on their own |
+| P2 | the belief is ≤ 50% of the camera's error vs the clean scene | **13%** (7.5× cleaner) | pass |
+| P3 | precision costs < 2 skill points | still +0.5, moving **+3.8** | pass |
+| P4 | a sudden object passes through in its first frame (< 30% error) | **8%** | pass |
+| P5 | phase gains ≥ 5 points on smooth 1.5 px/frame translation | **+0.0** (linear already 98.7%) | **killed** |
+| P6 | phase on the moving noisy room (recorded) | +1.7 | — |
+| P7 | phase gives no object permanence behind an occluder (within 15%) | ratio 0.94 | pass |
+
+**Exploratory, after the kill** (`tests/round2.explore.cjs`): phase earns something only when motion is fast compared with the linear filter's reach, about +3 to +4 points at 4.5–6 px/frame, with or without noise. As built, two phase features beside a linear filter, it is marginal.
+
+So **precision is on by default**: the present moon shows a belief, `p + K·(eye − p)`. **Phase is an opt-in experiment.**
+
+**What P7 says about the moons.** The phase-velocity memory is attached to pixel *locations*. Behind an occluder those locations hold a static bar, so nothing carries the blob's motion across. Anticipating a hand that reappears needs a memory attached to the *thing*, not to the place.
+
+**About Antti's live +0.2%.** The page used to feed each live-camera frame about twice, because `video.currentTime` advances continuously on a live stream. That's fixed: steps now follow `requestVideoFrameCallback`, with an exact-duplicate guard, and the meter shows how many duplicates were skipped. In simulation, duplicates cost 16 points, not 40, so something else about real cameras is also at work (likely compression keeping static regions identical, or very low sensor noise). That needs a rerun on the real camera.
+
 ## What the controls do
 
 - **Past moon memory**: how long the past moon remembers. Long memory lets a still room be predicted from the denoised past instead of the noisy present.
@@ -36,10 +58,12 @@ The gaze rule is the one that won in [Kuulustelu](https://github.com/anttiluode/
 - **Camera ↔ dream**: below 100% the brain is fed its own prediction instead of the camera. Learning pauses, because a dream must not teach itself.
 - **Future moon horizon**: rolls the model k frames forward from the present. The further future is blurrier.
 - **Attention gates learning**: the weights learn mostly from where the future moon is looking.
+- **Precision** (on): the present is a belief that trusts the eye only where the prediction is unsure, `K = 1 − R / max(U, E)`. R is the sensor-noise floor (20th percentile of running surprise), U the running surprise, and E this frame's local surprise, so anything new breaks through immediately.
+- **Phase moon** (off): a complex Gabor bank (2 scales, 4 orientations) remembers phase velocity and offers the predicted phase continuation to least squares. The rollout continues it by phase rotation.
 
 ## Honest ledger
 
-Measured, in `node tests/core.test.cjs` (9 tests, all pass):
+Measured, in `node tests/core.test.cjs` (12 tests, all pass):
 
 - **Still noisy room:** beats copy-last-frame by about 47%. The ideal for i.i.d. sensor noise is about 50%, since copy-last carries 2σ² and a perfectly denoised predictor carries σ². The memory tap carries the scene.
 - **Smooth noiseless motion:** beats copy-last-frame by about 91%. The motion taps learn to continue the last change.
